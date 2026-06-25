@@ -4,8 +4,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AR Fashion</title>
     <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { overflow: hidden; background: #000; }
+      * { margin: 0; padding: 0; }
+      body { overflow: hidden; }
 
       #loading {
         position: fixed;
@@ -18,11 +18,13 @@
         justify-content: center;
         font-family: sans-serif;
         z-index: 999;
-        gap: 16px;
+        gap: 12px;
       }
-      #loading p { font-size: 14px; opacity: 0.6; }
+      #loading h2 { font-size: 18px; font-weight: 500; }
+      #loading p  { font-size: 13px; opacity: 0.5; }
+
       .spinner {
-        width: 40px; height: 40px;
+        width: 36px; height: 36px;
         border: 3px solid #333;
         border-top-color: #fff;
         border-radius: 50%;
@@ -30,110 +32,85 @@
       }
       @keyframes spin { to { transform: rotate(360deg); } }
 
-      #hint {
-        position: fixed;
-        bottom: 40px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: rgba(0,0,0,0.5);
-        color: #fff;
-        font-family: sans-serif;
-        font-size: 13px;
-        padding: 10px 20px;
-        border-radius: 20px;
-        z-index: 10;
-        pointer-events: none;
+      #progress-bar {
+        width: 200px; height: 4px;
+        background: #222; border-radius: 2px; overflow: hidden;
+      }
+      #progress-fill {
+        height: 100%; width: 0%;
+        background: #fff;
+        transition: width 0.3s ease;
       }
     </style>
+
+    <!-- A-Frame -->
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <!-- MindAR A-Frame version (lighter than Three.js version) -->
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-body-aframe.prod.js"></script>
   </head>
+
   <body>
 
-    <!-- Loading screen -->
     <div id="loading">
       <div class="spinner"></div>
-      <p>Loading AR experience...</p>
+      <h2>Loading AR...</h2>
+      <div id="progress-bar"><div id="progress-fill"></div></div>
+      <p id="status-text">Starting up...</p>
     </div>
 
-    <!-- Hint text shown after AR starts -->
-    <div id="hint" style="display:none">
-      Point camera at your body and step back a little
-    </div>
+    <a-scene
+      mindar-body="filterMinCF:0.001; filterBeta:1000"
+      embedded
+      renderer="logarithmicDepthBuffer: true; colorManagement: true"
+      vr-mode-ui="enabled: false"
+      device-orientation-permission-ui="enabled: false"
+    >
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-    <!-- MindAR + Three.js -->
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-body-three.prod.js"></script>
+      <!-- 
+        This entity follows your left shoulder (anchor 11)
+        Change the src to your model file
+        Adjust scale and position until it looks right
+      -->
+      <a-entity mindar-body-target="anchorIndex: 11">
+        <a-entity
+          gltf-model="src: assets/model.glb"
+          scale="2 2 2"
+          position="0 -0.3 0"
+        ></a-entity>
+      </a-entity>
 
-    <script type="module">
-      import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-      import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+    </a-scene>
 
+    <script>
+      const statusText = document.getElementById('status-text');
+      const progressFill = document.getElementById('progress-fill');
       const loading = document.getElementById('loading');
-      const hint = document.getElementById('hint');
 
-      // --- 1. Set up MindAR ---
-      const mindarThree = new window.MINDAR.BODY.MindARThree({
-        container: document.body
+      // Fake progress so user sees something happening
+      let progress = 0;
+      const fakeProgress = setInterval(() => {
+        if (progress < 85) {
+          progress += Math.random() * 8;
+          progressFill.style.width = Math.min(progress, 85) + '%';
+          if (progress < 30) statusText.textContent = 'Loading libraries...';
+          else if (progress < 60) statusText.textContent = 'Loading body tracking AI...';
+          else statusText.textContent = 'Almost ready...';
+        }
+      }, 400);
+
+      // Hide loading when AR scene is ready
+      const scene = document.querySelector('a-scene');
+      scene.addEventListener('arReady', () => {
+        clearInterval(fakeProgress);
+        progressFill.style.width = '100%';
+        statusText.textContent = 'Ready!';
+        setTimeout(() => { loading.style.display = 'none'; }, 500);
       });
 
-      const { renderer, scene, camera } = mindarThree;
-
-      // --- 2. Lighting ---
-      const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
-      scene.add(ambientLight);
-
-      const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-      dirLight.position.set(0, 5, 5);
-      scene.add(dirLight);
-
-      // --- 3. Load your 3D model ---
-      // Replace 'model.glb' with your actual file name
-      const loader = new GLTFLoader();
-
-      loader.load(
-        'assets/model.glb',
-
-        (gltf) => {
-          const model = gltf.scene;
-
-          // Scale — adjust this number until the model looks right on your body
-          // Start with 2, go up or down depending on your model
-          model.scale.set(2, 2, 2);
-
-          // Position offset from the anchor point
-          // X = left/right, Y = up/down, Z = towards/away camera
-          model.position.set(0, -0.3, 0);
-
-          // Anchor 11 = left shoulder (center of torso area)
-          // See all anchor points in the README
-          const anchor = mindarThree.addAnchor(11);
-          anchor.group.add(model);
-        },
-
-        (progress) => {
-          // Loading progress
-          const pct = Math.round((progress.loaded / progress.total) * 100);
-          document.querySelector('#loading p').textContent = `Loading model... ${pct}%`;
-        },
-
-        (error) => {
-          console.error('Model load error:', error);
-          document.querySelector('#loading p').textContent =
-            'Could not load model. Check assets/model.glb exists.';
-        }
-      );
-
-      // --- 4. Start AR ---
-      await mindarThree.start();
-
-      // Hide loading screen
-      loading.style.display = 'none';
-      hint.style.display = 'block';
-
-      // Hide hint after 4 seconds
-      setTimeout(() => { hint.style.display = 'none'; }, 4000);
-
-      // --- 5. Render loop ---
-      renderer.setAnimationLoop(() => {
-        renderer.render(scene, camera);
+      scene.addEventListener('arError', (e) => {
+        clearInterval(fakeProgress);
+        statusText.textContent = 'Error: ' + (e.detail || 'Could not start AR');
       });
     </script>
 
