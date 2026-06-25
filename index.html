@@ -83,36 +83,29 @@
     </a-scene>
 
     <script>
-      const statusText = document.getElementById('status-text');
-      const progressFill = document.getElementById('progress-fill');
-      const loading = document.getElementById('loading');
+        const statusText = document.getElementById('status-text');
+        const progressFill = document.getElementById('progress-fill');
+        const loading = document.getElementById('loading');
 
-      // Fake progress so user sees something happening
-      let progress = 0;
-      const fakeProgress = setInterval(() => {
-        if (progress < 85) {
-          progress += Math.random() * 8;
-          progressFill.style.width = Math.min(progress, 85) + '%';
-          if (progress < 30) statusText.textContent = 'Loading libraries...';
-          else if (progress < 60) statusText.textContent = 'Loading body tracking AI...';
-          else statusText.textContent = 'Almost ready...';
-        }
-      }, 400);
+        let progress = 0;
+        const fakeProgress = setInterval(() => {
+            if (progress < 95) {
+                progress += Math.random() * 6;
+                progressFill.style.width = Math.min(progress, 95) + '%';
+                if (progress < 30) statusText.textContent = 'Loading libraries...';
+                else if (progress < 60) statusText.textContent = 'Loading body tracking AI...';
+                else if (progress < 85) statusText.textContent = 'Almost ready...';
+                else statusText.textContent = 'Starting camera...';
+            }
+        }, 400);
 
-      // Hide loading when AR scene is ready
-      const scene = document.querySelector('a-scene');
-      scene.addEventListener('arReady', () => {
-        clearInterval(fakeProgress);
-        progressFill.style.width = '100%';
-        statusText.textContent = 'Ready!';
-        setTimeout(() => { loading.style.display = 'none'; }, 500);
-      });
-
-      scene.addEventListener('arError', (e) => {
-        clearInterval(fakeProgress);
-        statusText.textContent = 'Error: ' + (e.detail || 'Could not start AR');
-      });
-    </script>
+  // Hide loading after fixed time — don't wait for arReady event
+  setTimeout(() => {
+    clearInterval(fakeProgress);
+    progressFill.style.width = '100%';
+    loading.style.display = 'none';
+  }, 8000);
+</script>
 
   </body>
 </html>
