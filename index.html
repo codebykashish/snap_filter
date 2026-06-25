@@ -2,25 +2,255 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Test</title>
+  <title>AR Fashion</title>
   <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
   <script>eruda.init();</script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; }
+
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* Camera feed behind everything */
+    #video {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* mirror like a selfie */
+    }
+
+    /* Three.js canvas on top of video */
+    #three-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    /* Loading screen */
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: sans-serif;
+      z-index: 999;
+      gap: 14px;
+    }
+    #loading h2 { font-size: 20px; font-weight: 500; }
+    #loading p  { font-size: 13px; opacity: 0.5; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #333;
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #progress-bar {
+      width: 220px; height: 4px;
+      background: #222; border-radius: 2px; overflow: hidden;
+    }
+    #progress-fill {
+      height: 100%; width: 0%;
+      background: #fff;
+      transition: width 0.4s ease;
+    }
+
+    /* Hint text */
+    #hint {
+      position: fixed;
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      font-family: sans-serif;
+      font-size: 13px;
+      padding: 10px 20px;
+      border-radius: 20px;
+      z-index: 10;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <h2>Loading AR...</h2>
+    <div id="progress-bar"><div id="progress-fill"></div></div>
+    <p id="status-text">Starting up...</p>
+  </div>
+
+  <div id="container">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="three-canvas"></canvas>
+  </div>
+
+  <div id="hint" style="display:none">
+    Step back so your full body is visible
+  </div>
+
+  <!-- TensorFlow -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0/dist/pose-detection.min.js"></script>
-</head>
-<body style="font-family:sans-serif; padding:20px; background:#111; color:white;">
-  <h1>Step 4 — TensorFlow loading...</h1>
-  <p id="status">Waiting...</p>
+
+  <!-- Three.js -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+
   <script>
-    window.addEventListener('load', () => {
-      if (typeof tf !== 'undefined' && typeof poseDetection !== 'undefined') {
-        document.getElementById('status').textContent = 'TensorFlow + Pose Detection loaded OK!';
-        document.body.style.background = 'green';
-      } else {
-        document.getElementById('status').textContent = 'TensorFlow FAILED';
-        document.body.style.background = 'red';
-      }
+    const loading      = document.getElementById('loading');
+    const statusText   = document.getElementById('status-text');
+    const progressFill = document.getElementById('progress-fill');
+    const hint         = document.getElementById('hint');
+    const video        = document.getElementById('video');
+    const canvas       = document.getElementById('three-canvas');
+
+    function setProgress(pct, text) {
+      progressFill.style.width = pct + '%';
+      statusText.textContent = text;
+    }
+
+    // ─── THREE.JS SETUP ───────────────────────────────────────────
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x000000, 0); // transparent background
+
+    const scene  = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
+    camera.position.set(0, 0, 5);
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 2));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 3);
+    dirLight.position.set(0, 5, 5);
+    scene.add(dirLight);
+
+    // Handle resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
     });
+
+    // ─── LOAD 3D MODEL ────────────────────────────────────────────
+    let model3D = null;
+
+    setProgress(20, 'Loading 3D model...');
+
+    const loader = new THREE.GLTFLoader();
+    loader.load(
+      'assets/model.glb',
+      (gltf) => {
+        model3D = gltf.scene;
+        model3D.scale.set(1.5, 1.5, 1.5);
+        model3D.visible = false; // hide until body is detected
+        scene.add(model3D);
+        setProgress(50, 'Loading pose detection...');
+        startAR();
+      },
+      (xhr) => {
+        const pct = 20 + Math.round((xhr.loaded / xhr.total) * 25);
+        setProgress(pct, 'Loading 3D model...');
+      },
+      (err) => {
+        console.error('Model load error:', err);
+        setProgress(20, 'Model error — check console');
+      }
+    );
+
+    // ─── START AR ─────────────────────────────────────────────────
+    async function startAR() {
+      // 1. Start camera
+      setProgress(55, 'Starting camera...');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        await new Promise(r => video.onloadedmetadata = r);
+      } catch (e) {
+        console.error('Camera error:', e);
+        statusText.textContent = 'Camera access denied — please allow camera';
+        return;
+      }
+
+      // 2. Load pose detector
+      setProgress(70, 'Loading body tracking AI...');
+      const detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+      );
+
+      setProgress(100, 'Ready!');
+      setTimeout(() => {
+        loading.style.display = 'none';
+        hint.style.display = 'block';
+        setTimeout(() => hint.style.display = 'none', 4000);
+      }, 500);
+
+      // 3. Detection + render loop
+      async function loop() {
+        if (video.readyState >= 2) {
+          const poses = await detector.estimatePoses(video);
+
+          if (poses.length > 0 && model3D) {
+            const keypoints = poses[0].keypoints;
+
+            // Use left shoulder (index 5) and right shoulder (index 6)
+            const leftShoulder  = keypoints[5];
+            const rightShoulder = keypoints[6];
+
+            if (leftShoulder.score > 0.3 && rightShoulder.score > 0.3) {
+              model3D.visible = true;
+
+              // Mid point between both shoulders
+              const midX = (leftShoulder.x + rightShoulder.x) / 2;
+              const midY = (leftShoulder.y + rightShoulder.y) / 2;
+
+              // Convert video pixel coords → Three.js scene coords
+              // Video is mirrored so flip X
+              const vw = video.videoWidth  || window.innerWidth;
+              const vh = video.videoHeight || window.innerHeight;
+
+              const x = -((midX / vw) * 2 - 1) * 3;   // flip X for mirror
+              const y = -((midY / vh) * 2 - 1) * 2.5;  // invert Y
+
+              // Smooth movement
+              model3D.position.x += (x - model3D.position.x) * 0.2;
+              model3D.position.y += (y - 0.3 - model3D.position.y) * 0.2; // -0.3 = offset down to chest
+              model3D.position.z = 0;
+
+              // Scale based on shoulder width (person closer = shoulders wider apart)
+              const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x) / vw;
+              const autoScale = Math.max(0.5, shoulderWidth * 8);
+              model3D.scale.setScalar(autoScale);
+            } else {
+              model3D.visible = false;
+            }
+          }
+        }
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(loop);
+      }
+
+      loop();
+    }
   </script>
+
 </body>
 </html>
