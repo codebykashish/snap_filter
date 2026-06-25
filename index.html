@@ -214,10 +214,29 @@
 
       // 2. Load pose detector
       setProgress(70, 'Loading body tracking AI...');
-      const detector = await poseDetection.createDetector(
-        poseDetection.SupportedModels.MoveNet,
-        { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
-      );
+      statusText.textContent = 'Initialising TensorFlow…';
+      await tf.ready();
+
+      statusText.textContent = 'Downloading AI model (9MB)… please wait';
+
+      let detector;
+      try {
+        const detectorPromise = poseDetection.createDetector(
+          poseDetection.SupportedModels.MoveNet,
+          { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+        );
+        const timeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 60000)
+        );
+        detector = await Promise.race([detectorPromise, timeout]);
+      } catch (e) {
+        console.error('Pose detector failed:', e);
+        statusText.textContent = e.message === 'timeout'
+          ? 'AI model download timed out. Check internet connection and refresh.'
+          : 'Failed to load AI: ' + e.message;
+        progressFill.style.background = '#f55';
+        return;
+      }
 
       setProgress(100, 'Ready!');
       setTimeout(() => {
