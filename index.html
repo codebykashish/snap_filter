@@ -106,8 +106,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@2.1.0/dist/pose-detection.min.js"></script>
 
   <!-- Three.js -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
 
   <script>
     const loading      = document.getElementById('loading');
@@ -150,29 +150,53 @@
 
     setProgress(20, 'Loading 3D model...');
 
-    const loader = new THREE.GLTFLoader();
-    loader.load(
+    let loader;
+    try { loader = new THREE.GLTFLoader(); } catch(e) {
+      console.error('GLTFLoader unavailable:', e);
+      setProgress(50, 'Starting AR...');
+      startAR();
+      loader = null;
+    }
+
+    // Fallback: if model takes too long or fails, start AR without it
+    const modelTimeout = setTimeout(() => {
+      console.warn('Model load timed out — starting AR without 3D model');
+      setProgress(50, 'Skipping model, starting AR...');
+      startAR();
+    }, 12000);
+
+    if (loader) loader.load(
       'assets/model.glb',
       (gltf) => {
+        clearTimeout(modelTimeout);
         model3D = gltf.scene;
         model3D.scale.set(1.5, 1.5, 1.5);
-        model3D.visible = false; // hide until body is detected
+        model3D.visible = false;
         scene.add(model3D);
         setProgress(50, 'Loading pose detection...');
         startAR();
       },
       (xhr) => {
-        const pct = 20 + Math.round((xhr.loaded / xhr.total) * 25);
-        setProgress(pct, 'Loading 3D model...');
+        if (xhr.total > 0) {
+          const pct = 20 + Math.round((xhr.loaded / xhr.total) * 25);
+          setProgress(pct, 'Loading 3D model...');
+        } else {
+          setProgress(25, `Loading 3D model… (${Math.round(xhr.loaded / 1024)}kb)`);
+        }
       },
       (err) => {
+        clearTimeout(modelTimeout);
         console.error('Model load error:', err);
-        setProgress(20, 'Model error — check console');
+        setProgress(50, 'Model failed — starting AR anyway...');
+        startAR(); // don't get stuck — continue without 3D model
       }
     );
 
     // ─── START AR ─────────────────────────────────────────────────
+    let arStarted = false;
     async function startAR() {
+      if (arStarted) return;
+      arStarted = true;
       // 1. Start camera
       setProgress(55, 'Starting camera...');
       try {
