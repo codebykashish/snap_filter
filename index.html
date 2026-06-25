@@ -99,13 +99,13 @@
             }
         }, 400);
 
-  // Hide loading after fixed time — don't wait for arReady event
-  setTimeout(() => {
-    clearInterval(fakeProgress);
-    progressFill.style.width = '100%';
-    loading.style.display = 'none';
-  }, 8000);
-</script>
+        // Hide loading after fixed time — don't wait for arReady event
+        setTimeout(() => {
+            clearInterval(fakeProgress);
+            progressFill.style.width = '100%';
+            loading.style.display = 'none';
+            }, 8000);
+    </script>
 
   </body>
 </html>
