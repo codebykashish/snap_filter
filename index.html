@@ -305,48 +305,65 @@
       poseDot.style.display = 'block';
       poseDot.className = 'searching';
 
+      // Stability state
+      let missFrames = 0;
+      const MISS_LIMIT = 12;      // hide only after 12 consecutive misses (~0.4s)
+      const SHOW_SCORE = 0.20;    // score needed to show
+      const HIDE_SCORE = 0.08;    // score needed to keep showing (hysteresis)
+      let modelVisible = false;
+      let smoothScale = 1.0;
+
       // 3. Detection + render loop
       async function loop() {
         if (video.readyState >= 2) {
           const poses = await detector.estimatePoses(video);
 
+          let detected = false;
           if (poses.length > 0) {
             const keypoints = poses[0].keypoints;
-            const leftShoulder  = keypoints[5];
-            const rightShoulder = keypoints[6];
+            const ls = keypoints[5];
+            const rs = keypoints[6];
 
-            if (leftShoulder.score > 0.15 && rightShoulder.score > 0.15) {
+            // Use lower threshold if already visible (hysteresis)
+            const thresh = modelVisible ? HIDE_SCORE : SHOW_SCORE;
+
+            if (ls.score > thresh && rs.score > thresh) {
+              detected = true;
+              missFrames = 0;
               poseDot.className = 'detected';
 
               if (model3D) {
-                model3D.visible = true;
+                if (!modelVisible) { modelVisible = true; model3D.visible = true; }
 
-                const midX = (leftShoulder.x + rightShoulder.x) / 2;
-                const midY = (leftShoulder.y + rightShoulder.y) / 2;
-
+                const midX = (ls.x + rs.x) / 2;
+                const midY = (ls.y + rs.y) / 2;
                 const vw = video.videoWidth  || window.innerWidth;
                 const vh = video.videoHeight || window.innerHeight;
 
-                // flip X only for front (mirrored) camera
                 const xNorm = (midX / vw) * 2 - 1;
                 const x = (facingMode === 'user' ? -xNorm : xNorm) * 3;
                 const y = -((midY / vh) * 2 - 1) * 2.5;
 
-                model3D.position.x += (x - model3D.position.x) * 0.2;
-                model3D.position.y += (y - 0.3 - model3D.position.y) * 0.2;
+                // Slow lerp → very smooth
+                model3D.position.x += (x - model3D.position.x) * 0.07;
+                model3D.position.y += (y - 0.3 - model3D.position.y) * 0.07;
                 model3D.position.z = 0;
 
-                const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x) / vw;
-                const autoScale = Math.max(0.5, shoulderWidth * 8);
-                model3D.scale.setScalar(autoScale);
+                // Smooth scale separately so it doesn't jump
+                const sw = Math.abs(ls.x - rs.x) / vw;
+                const targetScale = Math.max(0.5, sw * 8);
+                smoothScale += (targetScale - smoothScale) * 0.05;
+                model3D.scale.setScalar(smoothScale);
               }
-            } else {
-              poseDot.className = 'searching';
-              if (model3D) model3D.visible = false;
             }
-          } else {
-            poseDot.className = 'searching';
-            if (model3D) model3D.visible = false;
+          }
+
+          if (!detected) {
+            missFrames++;
+            if (missFrames >= MISS_LIMIT) {
+              poseDot.className = 'searching';
+              if (model3D && modelVisible) { modelVisible = false; model3D.visible = false; }
+            }
           }
         }
 
