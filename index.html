@@ -6,17 +6,18 @@
   <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
   <script>eruda.init();</script>
   <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-body-aframe.prod.js"></script>
 </head>
 <body style="font-family:sans-serif; padding:20px; background:#111; color:white;">
-  <h1>Step 2 — A-Frame loading...</h1>
+  <h1>Step 3 — MindAR loading...</h1>
   <p id="status">Waiting...</p>
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      if (typeof AFRAME !== 'undefined') {
-        document.getElementById('status').textContent = 'A-Frame loaded OK!';
+    window.addEventListener('load', () => {
+      if (typeof MINDAR !== 'undefined') {
+        document.getElementById('status').textContent = 'MindAR loaded OK!';
         document.body.style.background = 'green';
       } else {
-        document.getElementById('status').textContent = 'A-Frame FAILED to load';
+        document.getElementById('status').textContent = 'MindAR FAILED to load';
         document.body.style.background = 'red';
       }
     });
