@@ -5,9 +5,21 @@
   <title>Test</title>
   <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
   <script>eruda.init();</script>
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
 </head>
-<body style="background:red; color:white; font-family:sans-serif; padding:20px;">
-  <h1>Step 1 works</h1>
-  <p>If you see this red page, HTML is loading fine.</p>
+<body style="font-family:sans-serif; padding:20px; background:#111; color:white;">
+  <h1>Step 2 — A-Frame loading...</h1>
+  <p id="status">Waiting...</p>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (typeof AFRAME !== 'undefined') {
+        document.getElementById('status').textContent = 'A-Frame loaded OK!';
+        document.body.style.background = 'green';
+      } else {
+        document.getElementById('status').textContent = 'A-Frame FAILED to load';
+        document.body.style.background = 'red';
+      }
+    });
+  </script>
 </body>
 </html>
