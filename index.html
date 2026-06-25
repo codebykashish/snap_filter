@@ -21,7 +21,7 @@
       top: 0; left: 0;
       width: 100%; height: 100%;
       object-fit: cover;
-      transform: scaleX(-1); /* mirror like a selfie */
+      /* mirror set dynamically by JS based on facing mode */
     }
 
     /* Three.js canvas on top of video */
@@ -81,6 +81,36 @@
       z-index: 10;
       white-space: nowrap;
     }
+
+    /* Camera flip button */
+    #flip-btn {
+      position: fixed;
+      top: 18px; right: 18px;
+      z-index: 20;
+      background: rgba(0,0,0,0.55);
+      border: 1px solid rgba(255,255,255,0.25);
+      color: #fff;
+      font-size: 22px;
+      width: 46px; height: 46px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Pose status dot */
+    #pose-dot {
+      position: fixed;
+      top: 22px; left: 18px;
+      z-index: 20;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #555;
+      display: none;
+    }
+    #pose-dot.detected { background: #4f4; }
+    #pose-dot.searching { background: #fa0; }
   </style>
 </head>
 <body>
@@ -96,6 +126,9 @@
     <video id="video" autoplay playsinline muted></video>
     <canvas id="three-canvas"></canvas>
   </div>
+
+  <button id="flip-btn" title="Flip camera">🔄</button>
+  <div id="pose-dot"></div>
 
   <div id="hint" style="display:none">
     Step back so your full body is visible
@@ -116,6 +149,11 @@
     const hint         = document.getElementById('hint');
     const video        = document.getElementById('video');
     const canvas       = document.getElementById('three-canvas');
+    const flipBtn      = document.getElementById('flip-btn');
+    const poseDot      = document.getElementById('pose-dot');
+
+    let facingMode = 'environment'; // start with back camera
+    let currentStream = null;
 
     function setProgress(pct, text) {
       progressFill.style.width = pct + '%';
@@ -163,7 +201,7 @@
       console.warn('Model load timed out — starting AR without 3D model');
       setProgress(50, 'Skipping model, starting AR...');
       startAR();
-    }, 12000);
+    }, 45000);
 
     if (loader) loader.load(
       'assets/model.glb',
@@ -199,18 +237,37 @@
       arStarted = true;
       // 1. Start camera
       setProgress(55, 'Starting camera...');
-      try {
+
+      async function startCamera(facing) {
+        if (currentStream) currentStream.getTracks().forEach(t => t.stop());
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } },
           audio: false
         });
+        currentStream = stream;
         video.srcObject = stream;
+        // mirror only for front camera
+        video.style.transform = facing === 'user' ? 'scaleX(-1)' : 'none';
         await new Promise(r => video.onloadedmetadata = r);
-      } catch (e) {
-        console.error('Camera error:', e);
-        statusText.textContent = 'Camera access denied — please allow camera';
-        return;
       }
+
+      try {
+        await startCamera(facingMode);
+      } catch (e) {
+        // fallback to front if back not available
+        try { facingMode = 'user'; await startCamera(facingMode); }
+        catch (e2) {
+          console.error('Camera error:', e2);
+          statusText.textContent = 'Camera access denied — please allow camera';
+          return;
+        }
+      }
+
+      flipBtn.style.display = 'flex';
+      flipBtn.onclick = async () => {
+        facingMode = facingMode === 'user' ? 'environment' : 'user';
+        try { await startCamera(facingMode); } catch(e) { console.warn('Flip failed', e); }
+      };
 
       // 2. Load pose detector
       setProgress(70, 'Loading body tracking AI...');
@@ -245,45 +302,51 @@
         setTimeout(() => hint.style.display = 'none', 4000);
       }, 500);
 
+      poseDot.style.display = 'block';
+      poseDot.className = 'searching';
+
       // 3. Detection + render loop
       async function loop() {
         if (video.readyState >= 2) {
           const poses = await detector.estimatePoses(video);
 
-          if (poses.length > 0 && model3D) {
+          if (poses.length > 0) {
             const keypoints = poses[0].keypoints;
-
-            // Use left shoulder (index 5) and right shoulder (index 6)
             const leftShoulder  = keypoints[5];
             const rightShoulder = keypoints[6];
 
-            if (leftShoulder.score > 0.3 && rightShoulder.score > 0.3) {
-              model3D.visible = true;
+            if (leftShoulder.score > 0.15 && rightShoulder.score > 0.15) {
+              poseDot.className = 'detected';
 
-              // Mid point between both shoulders
-              const midX = (leftShoulder.x + rightShoulder.x) / 2;
-              const midY = (leftShoulder.y + rightShoulder.y) / 2;
+              if (model3D) {
+                model3D.visible = true;
 
-              // Convert video pixel coords → Three.js scene coords
-              // Video is mirrored so flip X
-              const vw = video.videoWidth  || window.innerWidth;
-              const vh = video.videoHeight || window.innerHeight;
+                const midX = (leftShoulder.x + rightShoulder.x) / 2;
+                const midY = (leftShoulder.y + rightShoulder.y) / 2;
 
-              const x = -((midX / vw) * 2 - 1) * 3;   // flip X for mirror
-              const y = -((midY / vh) * 2 - 1) * 2.5;  // invert Y
+                const vw = video.videoWidth  || window.innerWidth;
+                const vh = video.videoHeight || window.innerHeight;
 
-              // Smooth movement
-              model3D.position.x += (x - model3D.position.x) * 0.2;
-              model3D.position.y += (y - 0.3 - model3D.position.y) * 0.2; // -0.3 = offset down to chest
-              model3D.position.z = 0;
+                // flip X only for front (mirrored) camera
+                const xNorm = (midX / vw) * 2 - 1;
+                const x = (facingMode === 'user' ? -xNorm : xNorm) * 3;
+                const y = -((midY / vh) * 2 - 1) * 2.5;
 
-              // Scale based on shoulder width (person closer = shoulders wider apart)
-              const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x) / vw;
-              const autoScale = Math.max(0.5, shoulderWidth * 8);
-              model3D.scale.setScalar(autoScale);
+                model3D.position.x += (x - model3D.position.x) * 0.2;
+                model3D.position.y += (y - 0.3 - model3D.position.y) * 0.2;
+                model3D.position.z = 0;
+
+                const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x) / vw;
+                const autoScale = Math.max(0.5, shoulderWidth * 8);
+                model3D.scale.setScalar(autoScale);
+              }
             } else {
-              model3D.visible = false;
+              poseDot.className = 'searching';
+              if (model3D) model3D.visible = false;
             }
+          } else {
+            poseDot.className = 'searching';
+            if (model3D) model3D.visible = false;
           }
         }
 
