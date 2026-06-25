@@ -3,6 +3,11 @@
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AR Fashion</title>
+
+    <!-- Eruda: mobile console for debugging — remove after fixing -->
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script>
+
     <style>
       * { margin: 0; padding: 0; }
       body { overflow: hidden; }
@@ -43,9 +48,7 @@
       }
     </style>
 
-    <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-    <!-- MindAR A-Frame version (lighter than Three.js version) -->
     <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-body-aframe.prod.js"></script>
   </head>
 
@@ -65,16 +68,17 @@
       vr-mode-ui="enabled: false"
       device-orientation-permission-ui="enabled: false"
     >
+      <a-assets>
+        <!-- Preload the model here — fixes the gltf loading issue -->
+        <a-asset-item id="my-model" src="assets/model.glb"></a-asset-item>
+      </a-assets>
+
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-      <!-- 
-        This entity follows your left shoulder (anchor 11)
-        Change the src to your model file
-        Adjust scale and position until it looks right
-      -->
       <a-entity mindar-body-target="anchorIndex: 11">
+        <!-- Note: gltf-model="#my-model" not "src: assets/model.glb" -->
         <a-entity
-          gltf-model="src: assets/model.glb"
+          gltf-model="#my-model"
           scale="2 2 2"
           position="0 -0.3 0"
         ></a-entity>
@@ -83,28 +87,28 @@
     </a-scene>
 
     <script>
-        const statusText = document.getElementById('status-text');
-        const progressFill = document.getElementById('progress-fill');
-        const loading = document.getElementById('loading');
+      const statusText = document.getElementById('status-text');
+      const progressFill = document.getElementById('progress-fill');
+      const loading = document.getElementById('loading');
 
-        let progress = 0;
-        const fakeProgress = setInterval(() => {
-            if (progress < 95) {
-                progress += Math.random() * 6;
-                progressFill.style.width = Math.min(progress, 95) + '%';
-                if (progress < 30) statusText.textContent = 'Loading libraries...';
-                else if (progress < 60) statusText.textContent = 'Loading body tracking AI...';
-                else if (progress < 85) statusText.textContent = 'Almost ready...';
-                else statusText.textContent = 'Starting camera...';
-            }
-        }, 400);
+      let progress = 0;
+      const fakeProgress = setInterval(() => {
+        if (progress < 95) {
+          progress += Math.random() * 6;
+          progressFill.style.width = Math.min(progress, 95) + '%';
+          if (progress < 30) statusText.textContent = 'Loading libraries...';
+          else if (progress < 60) statusText.textContent = 'Loading body tracking AI...';
+          else if (progress < 85) statusText.textContent = 'Almost ready...';
+          else statusText.textContent = 'Starting camera...';
+        }
+      }, 400);
 
-        // Hide loading after fixed time — don't wait for arReady event
-        setTimeout(() => {
-            clearInterval(fakeProgress);
-            progressFill.style.width = '100%';
-            loading.style.display = 'none';
-            }, 8000);
+      // Hide loading after 10 seconds
+      setTimeout(() => {
+        clearInterval(fakeProgress);
+        progressFill.style.width = '100%';
+        loading.style.display = 'none';
+      }, 10000);
     </script>
 
   </body>
